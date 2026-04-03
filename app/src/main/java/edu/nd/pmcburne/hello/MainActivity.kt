@@ -1,22 +1,27 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package edu.nd.pmcburne.hello
 
-import android.content.res.Configuration
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,22 +30,40 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.modifier.modifierLocalConsumer
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
+import edu.nd.pmcburne.hello.data.local.LocationEntity
 import edu.nd.pmcburne.hello.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
-    private val viewModel by viewModels<MainViewModel>()
+    private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainScreen(viewModel, modifier = Modifier.padding(innerPadding))
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    topBar = {
+                        TopAppBar(
+                            title = { Text("UVA Campus Maps") },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                titleContentColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                    }
+                ) { innerPadding ->
+                    CampusMapScreen(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(innerPadding)
+                    )
                 }
             }
         }
@@ -48,64 +71,80 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier) {
-        Text(
-            "Welcome to the Counter App!"
-        )
-        Spacer(modifier = modifier.height(16.dp))
-        Counter(viewModel)
-    }
-}
-
-@Composable
-@Preview(showBackground = true)
-fun PreviewMainScreen() {
-    MyApplicationTheme {
-        MainScreen(viewModel = MainViewModel())
-    }
-}
-
-@Composable
-fun Counter(
+fun CampusMapScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val counterValue = uiState.counterValue
-    Row {
-        Text("Value: $counterValue")
-        Button( // increment button
-            onClick = { viewModel.incrementCounter() },
-            modifier = modifier
-        ) { Text("+") }
-        Button( //decrement button
-            onClick = { viewModel.decrementCounter() },
-            enabled = viewModel.isDecrementEnabled,
-            modifier = modifier
+    var expanded by remember { mutableStateOf(false) }
+    
+    // Default camera position centered on UVA
+    val uvaLocation = LatLng(38.0356, -78.5034)
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(uvaLocation, 15f)
+    }
+    
+    Column(modifier = modifier.fillMaxSize()) {
+        // Tag Filter Dropdown
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
         ) {
-            Text("-")
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                TextField(
+                    value = uiState.selectedTag,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Filter by Tag") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor()
+                )
+                
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    uiState.allTags.forEach { tag ->
+                        DropdownMenuItem(
+                            text = { Text(tag) },
+                            onClick = {
+                                viewModel.selectTag(tag)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
         }
-        Button( // reset button
-            onClick = { viewModel.incrementCounter() },
-            enabled = viewModel.isResetEnabled,
-            modifier = modifier
-        ) {
-            Text("Reset")
+        
+        // Google Map
+        Box(modifier = Modifier.fillMaxSize()) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState
+            ) {
+                uiState.locations.forEach { location ->
+                    LocationMarker(location = location)
+                }
+            }
         }
-
     }
 }
 
-
-@Preview(name = "Light Mode Counter", showBackground = true)
-@Preview(name = "Dark Mode Counter", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
-fun CounterPreview() {
-    MyApplicationTheme {
-        Counter(viewModel = MainViewModel(0))
-    }
+fun LocationMarker(location: LocationEntity) {
+    val position = remember { LatLng(location.latitude, location.longitude) }
+    val markerState = remember { MarkerState(position = position) }
+
+    Marker(
+        state = markerState,
+        title = location.name,
+        snippet = location.description
+    )
 }
