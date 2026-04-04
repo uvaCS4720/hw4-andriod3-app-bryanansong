@@ -25,6 +25,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -130,7 +131,9 @@ fun CampusMapScreen(
                 cameraPositionState = cameraPositionState
             ) {
                 uiState.locations.forEach { location ->
-                    LocationMarker(location = location)
+                    key(location.id) {
+                        LocationMarker(location = location)
+                    }
                 }
             }
         }
@@ -139,12 +142,17 @@ fun CampusMapScreen(
 
 @Composable
 fun LocationMarker(location: LocationEntity) {
-    val position = remember { LatLng(location.latitude, location.longitude) }
-    val markerState = remember { MarkerState(position = position) }
+    // Use location.id as key to ensure position is recalculated when location changes
+    val position = remember(location.id) { LatLng(location.latitude, location.longitude) }
+    val markerState = remember(location.id) { MarkerState(position = position) }
 
     Marker(
         state = markerState,
         title = location.name,
-        snippet = location.description
+        snippet = location.description,
+        onClick = {
+            // Return false to show default info window with title and snippet
+            false
+        }
     )
 }
